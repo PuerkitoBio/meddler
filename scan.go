@@ -22,24 +22,28 @@ type Database struct {
 	UseReturningToGetID bool   // use PostgreSQL-style RETURNING "ID" instead of calling sql.Result.LastInsertID
 }
 
+// MySQL is the Database value for that provider.
 var MySQL = &Database{
 	Quote:               "`",
 	Placeholder:         "?",
 	UseReturningToGetID: false,
 }
 
+// PostgreSQL is the Database value for that provider.
 var PostgreSQL = &Database{
 	Quote:               `"`,
 	Placeholder:         "$1",
 	UseReturningToGetID: true,
 }
 
+// SQLite is the Database value for that provider.
 var SQLite = &Database{
 	Quote:               `"`,
 	Placeholder:         "?",
 	UseReturningToGetID: false,
 }
 
+// Default is the default Database value used by package-level functions.
 var Default = MySQL
 
 // StmtCacheFunc is a function that takes a DB interface and a query string
@@ -65,7 +69,7 @@ var Debug = true
 
 type structField struct {
 	column     string
-	index      int
+	index      []int
 	primaryKey bool
 	meddler    Meddler
 }
@@ -127,7 +131,7 @@ func getFields(dstType reflect.Type) (*structData, error) {
 		}
 
 		// check for a meddler
-		var meddler Meddler = registry["identity"]
+		var meddler = registry["identity"]
 		for j := 1; j < len(tag); j++ {
 			if tag[j] == "pk" {
 				if f.Type.Kind() == reflect.Ptr {
@@ -159,7 +163,7 @@ func getFields(dstType reflect.Type) (*structData, error) {
 		data.fields[name] = &structField{
 			column:     name,
 			primaryKey: name == data.pk,
-			index:      i,
+			index:      []int{i},
 			meddler:    meddler,
 		}
 		data.columns = append(data.columns, name)
@@ -227,7 +231,7 @@ func (d *Database) PrimaryKey(src interface{}) (name string, pk int64, err error
 	}
 
 	name = data.pk
-	field := reflect.ValueOf(src).Elem().Field(data.fields[name].index)
+	field := reflect.ValueOf(src).Elem().Field(data.fields[name].index[0])
 	switch field.Type().Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		pk = field.Int()
@@ -256,7 +260,7 @@ func (d *Database) SetPrimaryKey(src interface{}, pk int64) error {
 		return fmt.Errorf("meddler.SetPrimaryKey: no primary key field found")
 	}
 
-	field := reflect.ValueOf(src).Elem().Field(data.fields[data.pk].index)
+	field := reflect.ValueOf(src).Elem().Field(data.fields[data.pk].index[0])
 	switch field.Type().Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		field.SetInt(pk)
@@ -314,7 +318,7 @@ func (d *Database) SomeValues(src interface{}, columns []string) ([]interface{},
 			continue
 		}
 
-		saveVal, err := field.meddler.PreWrite(structVal.Field(field.index).Interface())
+		saveVal, err := field.meddler.PreWrite(structVal.Field(field.index[0]).Interface())
 		if err != nil {
 			return nil, fmt.Errorf("meddler.SomeValues: PreWrite error on column [%s]: %v", name, err)
 		}
@@ -415,7 +419,7 @@ func (d *Database) Targets(dst interface{}, columns []string) ([]interface{}, er
 	var targets []interface{}
 	for _, name := range columns {
 		if field, present := data.fields[name]; present {
-			fieldAddr := structVal.Field(field.index).Addr().Interface()
+			fieldAddr := structVal.Field(field.index[0]).Addr().Interface()
 			scanTarget, err := field.meddler.PreRead(fieldAddr)
 			if err != nil {
 				return nil, fmt.Errorf("meddler.Targets: PreRead error on column %s: %v", name, err)
@@ -444,7 +448,7 @@ func Targets(dst interface{}, columns []string) ([]interface{}, error) {
 // by Targets.
 func (d *Database) WriteTargets(dst interface{}, columns []string, targets []interface{}) error {
 	if len(columns) != len(targets) {
-		return fmt.Errorf("meddler.WriteTargets: mismatch in number of columns (%d) and targets (%s)",
+		return fmt.Errorf("meddler.WriteTargets: mismatch in number of columns (%d) and targets (%d)",
 			len(columns), len(targets))
 	}
 
@@ -456,7 +460,7 @@ func (d *Database) WriteTargets(dst interface{}, columns []string, targets []int
 
 	for i, name := range columns {
 		if field, present := data.fields[name]; present {
-			fieldAddr := structVal.Field(field.index).Addr().Interface()
+			fieldAddr := structVal.Field(field.index[0]).Addr().Interface()
 			err := field.meddler.PostRead(fieldAddr, targets[i])
 			if err != nil {
 				return fmt.Errorf("meddler.WriteTargets: PostRead error on column [%s]: %v", name, err)

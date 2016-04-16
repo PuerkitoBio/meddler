@@ -3,13 +3,14 @@ package meddler
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var once sync.Once
@@ -68,7 +69,7 @@ const schema2 = `create table item (
 	stuffz blob not null
 )`
 
-var aliceHeight int = 65
+var aliceHeight = 65
 var alice = &Person{
 	Name:      "Alice",
 	Email:     "alice@alice.com",
@@ -115,7 +116,7 @@ func structFieldEqual(t *testing.T, elt *structField, ref *structField) {
 	if elt.primaryKey != ref.primaryKey {
 		t.Errorf("Column %s primaryKey found as %v", ref.column, elt.primaryKey)
 	}
-	if elt.index != ref.index {
+	if !reflect.DeepEqual(elt.index, ref.index) {
 		t.Errorf("Column %s index found as %v", ref.column, elt.index)
 	}
 	if elt.meddler != ref.meddler {
@@ -134,14 +135,14 @@ func TestGetFields(t *testing.T) {
 	if len(data.fields) != 8 || len(data.columns) != 8 {
 		t.Errorf("Found %d/%d fields, expected 8", len(data.fields), len(data.columns))
 	}
-	structFieldEqual(t, data.fields[data.columns[0]], &structField{"id", 0, true, registry["identity"]})
-	structFieldEqual(t, data.fields[data.columns[1]], &structField{"name", 1, false, registry["identity"]})
-	structFieldEqual(t, data.fields[data.columns[2]], &structField{"Email", 3, false, registry["identity"]})
-	structFieldEqual(t, data.fields[data.columns[3]], &structField{"Age", 5, false, registry["zeroisnull"]})
-	structFieldEqual(t, data.fields[data.columns[4]], &structField{"opened", 6, false, registry["utctime"]})
-	structFieldEqual(t, data.fields[data.columns[5]], &structField{"closed", 7, false, registry["utctimez"]})
-	structFieldEqual(t, data.fields[data.columns[6]], &structField{"updated", 8, false, registry["localtime"]})
-	structFieldEqual(t, data.fields[data.columns[7]], &structField{"height", 9, false, registry["identity"]})
+	structFieldEqual(t, data.fields[data.columns[0]], &structField{"id", []int{0}, true, registry["identity"]})
+	structFieldEqual(t, data.fields[data.columns[1]], &structField{"name", []int{1}, false, registry["identity"]})
+	structFieldEqual(t, data.fields[data.columns[2]], &structField{"Email", []int{3}, false, registry["identity"]})
+	structFieldEqual(t, data.fields[data.columns[3]], &structField{"Age", []int{5}, false, registry["zeroisnull"]})
+	structFieldEqual(t, data.fields[data.columns[4]], &structField{"opened", []int{6}, false, registry["utctime"]})
+	structFieldEqual(t, data.fields[data.columns[5]], &structField{"closed", []int{7}, false, registry["utctimez"]})
+	structFieldEqual(t, data.fields[data.columns[6]], &structField{"updated", []int{8}, false, registry["localtime"]})
+	structFieldEqual(t, data.fields[data.columns[7]], &structField{"height", []int{9}, false, registry["identity"]})
 }
 
 func personEqual(t *testing.T, elt *Person, ref *Person) {
@@ -162,7 +163,7 @@ func personEqual(t *testing.T, elt *Person, ref *Person) {
 		t.Errorf("Person %s Email is %v", ref.Name, elt.Email)
 	}
 	if elt.Ephemeral != ref.Ephemeral {
-		t.Errorf("Person %s Ephemeral is %v", ref.Ephemeral, elt.Ephemeral)
+		t.Errorf("Person %d Ephemeral is %v", ref.Ephemeral, elt.Ephemeral)
 	}
 	if elt.Age != ref.Age {
 		t.Errorf("Person %s Age is %v", ref.Name, elt.Age)
