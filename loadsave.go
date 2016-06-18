@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx"
 )
 
 type dbErr struct {
@@ -25,16 +27,17 @@ func DriverErr(err error) (error, bool) {
 	return err, false
 }
 
-// DB is a generic database interface, matching both *sql.Db and *sql.Tx
+// DB is a generic pgx database interface, matching *pgx.Conn, *pgx.ConnPool
+// and *pgx.Tx.
 type DB interface {
-	Exec(query string, args ...interface{}) (sql.Result, error)
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRow(query string, args ...interface{}) *sql.Row
+	Exec(query string, args ...interface{}) (pgx.CommandTag, error)
+	Query(query string, args ...interface{}) (*pgx.Rows, error)
+	QueryRow(query string, args ...interface{}) *pgx.Row
 }
 
 // Load loads a record using a query for the primary key field.
 // Returns sql.ErrNoRows if not found.
-func (d *Database) Load(db DB, table string, dst interface{}, pk int64) error {
+func Load(db DB, table string, dst interface{}, pk int64) error {
 	columns, err := d.ColumnsQuoted(dst, true)
 	if err != nil {
 		return err
@@ -61,16 +64,11 @@ func (d *Database) Load(db DB, table string, dst interface{}, pk int64) error {
 	return d.ScanRow(rows, dst)
 }
 
-// Load using the Default Database type
-func Load(db DB, table string, dst interface{}, pk int64) error {
-	return Default.Load(db, table, dst, pk)
-}
-
 // Insert performs an INSERT query for the given record.
 // If the record has a primary key flagged, it must be zero, and it
 // will be set to the newly-allocated primary key value from the database
 // as returned by LastInsertId.
-func (d *Database) Insert(db DB, table string, src interface{}) error {
+func Insert(db DB, table string, src interface{}) error {
 	pkName, pkValue, err := d.PrimaryKey(src)
 	if err != nil {
 		return err
@@ -134,15 +132,10 @@ func (d *Database) Insert(db DB, table string, src interface{}) error {
 	return nil
 }
 
-// Insert using the Default Database type
-func Insert(db DB, table string, src interface{}) error {
-	return Default.Insert(db, table, src)
-}
-
 // Update performs and UPDATE query for the given record.
 // The record must have an integer primary key field that is non-zero,
 // and it will be used to select the database row that gets updated.
-func (d *Database) Update(db DB, table string, src interface{}) error {
+func Update(db DB, table string, src interface{}) error {
 	// gather the query parts
 	names, err := d.Columns(src, false)
 	if err != nil {
@@ -189,14 +182,9 @@ func (d *Database) Update(db DB, table string, src interface{}) error {
 	return nil
 }
 
-// Update using the Default Database type
-func Update(db DB, table string, src interface{}) error {
-	return Default.Update(db, table, src)
-}
-
 // Save performs an INSERT or an UPDATE, depending on whether or not
 // a primary keys exists and is non-zero.
-func (d *Database) Save(db DB, table string, src interface{}) error {
+func Save(db DB, table string, src interface{}) error {
 	pkName, pkValue, err := d.PrimaryKey(src)
 	if err != nil {
 		return err
@@ -208,15 +196,10 @@ func (d *Database) Save(db DB, table string, src interface{}) error {
 	}
 }
 
-// Save using the Default Database type
-func Save(db DB, table string, src interface{}) error {
-	return Default.Save(db, table, src)
-}
-
 // QueryOne performs the given query with the given arguments, scanning a
 // single row of results into dst. Returns sql.ErrNoRows if there was no
 // result row.
-func (d *Database) QueryRow(db DB, dst interface{}, query string, args ...interface{}) error {
+func QueryRow(db DB, dst interface{}, query string, args ...interface{}) error {
 	// perform the query
 	rows, err := runQuery(db, query, args...)
 	if err != nil {
@@ -227,14 +210,9 @@ func (d *Database) QueryRow(db DB, dst interface{}, query string, args ...interf
 	return d.ScanRow(rows, dst)
 }
 
-// QueryRow using the Default Database type
-func QueryRow(db DB, dst interface{}, query string, args ...interface{}) error {
-	return Default.QueryRow(db, dst, query, args...)
-}
-
 // QueryAll performs the given query with the given arguments, scanning
 // all results rows into dst.
-func (d *Database) QueryAll(db DB, dst interface{}, query string, args ...interface{}) error {
+func QueryAll(db DB, dst interface{}, query string, args ...interface{}) error {
 	// perform the query
 	rows, err := runQuery(db, query, args...)
 	if err != nil {
@@ -243,11 +221,6 @@ func (d *Database) QueryAll(db DB, dst interface{}, query string, args ...interf
 
 	// gather the results
 	return d.ScanAll(rows, dst)
-}
-
-// QueryAll using the Default Database type
-func QueryAll(db DB, dst interface{}, query string, args ...interface{}) error {
-	return Default.QueryAll(db, dst, query, args...)
 }
 
 func runQuery(db DB, q string, args ...interface{}) (*sql.Rows, error) {

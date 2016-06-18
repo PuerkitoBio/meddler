@@ -1,6 +1,10 @@
 Meddler [![Build Status](https://travis-ci.org/russross/meddler.svg?branch=master)](https://travis-ci.org/russross/meddler)
 =======
 
+This `pgxnative` branch implements the meddler API for use with the `pgx`
+package, a native postgres driver that is faster than other `database/sql`-
+based ones such as `pq`.
+
 Meddler is a small toolkit to take some of the tedium out of moving data
 back and forth between sql queries and structs.
 

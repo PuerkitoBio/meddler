@@ -13,34 +13,11 @@ import (
 // the name of our struct tag
 const tagName = "meddler"
 
-// Database contains database-specific options.
-// MySQL, PostgreSQL, and SQLite are provided for convenience.
-// Setting Default to any of these lets you use the package-level convenience functions.
-type Database struct {
-	Quote               string // the quote character for table and column names
-	Placeholder         string // the placeholder style to use in generated queries
-	UseReturningToGetID bool   // use PostgreSQL-style RETURNING "ID" instead of calling sql.Result.LastInsertID
-}
-
-var MySQL = &Database{
-	Quote:               "`",
-	Placeholder:         "?",
-	UseReturningToGetID: false,
-}
-
-var PostgreSQL = &Database{
-	Quote:               `"`,
-	Placeholder:         "$1",
-	UseReturningToGetID: true,
-}
-
-var SQLite = &Database{
-	Quote:               `"`,
-	Placeholder:         "?",
-	UseReturningToGetID: false,
-}
-
-var Default = MySQL
+const (
+	Quote               = `"`
+	Placeholder         = "$1"
+	UseReturningToGetID = true
+)
 
 // StmtCacheFunc is a function that takes a DB interface and a query string
 // and returns a prepared statement or an error. If the returned statement
@@ -52,11 +29,11 @@ var Default = MySQL
 // The default nil value means that no prepared statement is used.
 var StmtCacheFunc func(DB, string) (*sql.Stmt, error)
 
-func (d *Database) quoted(s string) string {
+func quoted(s string) string {
 	return d.Quote + s + d.Quote
 }
 
-func (d *Database) placeholder(n int) string {
+func placeholder(n int) string {
 	return strings.Replace(d.Placeholder, "1", strconv.FormatInt(int64(n), 10), 1)
 }
 
@@ -170,7 +147,7 @@ func getFields(dstType reflect.Type) (*structData, error) {
 }
 
 // Columns returns a list of column names for its input struct.
-func (d *Database) Columns(src interface{}, includePk bool) ([]string, error) {
+func Columns(src interface{}, includePk bool) ([]string, error) {
 	data, err := getFields(reflect.TypeOf(src))
 	if err != nil {
 		return nil, err
@@ -187,15 +164,10 @@ func (d *Database) Columns(src interface{}, includePk bool) ([]string, error) {
 	return names, nil
 }
 
-// Columns using the Default Database type
-func Columns(src interface{}, includePk bool) ([]string, error) {
-	return Default.Columns(src, includePk)
-}
-
 // ColumnsQuoted is similar to Columns, but it return the list of columns in the form:
 //   `column1`,`column2`,...
 // using Quote as the quote character.
-func (d *Database) ColumnsQuoted(src interface{}, includePk bool) (string, error) {
+func ColumnsQuoted(src interface{}, includePk bool) (string, error) {
 	unquoted, err := Columns(src, includePk)
 	if err != nil {
 		return "", err
@@ -209,14 +181,9 @@ func (d *Database) ColumnsQuoted(src interface{}, includePk bool) (string, error
 	return strings.Join(parts, ","), nil
 }
 
-// ColumnsQuoted using the Default Database type
-func ColumnsQuoted(src interface{}, includePk bool) (string, error) {
-	return Default.ColumnsQuoted(src, includePk)
-}
-
 // PrimaryKey returns the name and value of the primary key field. The name
 // is the empty string if there is not primary key field marked.
-func (d *Database) PrimaryKey(src interface{}) (name string, pk int64, err error) {
+func PrimaryKey(src interface{}) (name string, pk int64, err error) {
 	data, err := getFields(reflect.TypeOf(src))
 	if err != nil {
 		return "", 0, err
@@ -240,13 +207,8 @@ func (d *Database) PrimaryKey(src interface{}) (name string, pk int64, err error
 	return name, pk, nil
 }
 
-// PrimaryKey using the Default Database type
-func PrimaryKey(src interface{}) (name string, pk int64, err error) {
-	return Default.PrimaryKey(src)
-}
-
 // SetPrimaryKey sets the primary key field to the given int value.
-func (d *Database) SetPrimaryKey(src interface{}, pk int64) error {
+func SetPrimaryKey(src interface{}, pk int64) error {
 	data, err := getFields(reflect.TypeOf(src))
 	if err != nil {
 		return err
@@ -269,16 +231,11 @@ func (d *Database) SetPrimaryKey(src interface{}, pk int64) error {
 	return nil
 }
 
-// SetPrimaryKey using the Default Database type
-func SetPrimaryKey(src interface{}, pk int64) error {
-	return Default.SetPrimaryKey(src, pk)
-}
-
 // Values returns a list of PreWrite processed values suitable for
 // use in an INSERT or UPDATE query. If includePk is false, the primary
 // key field is omitted. The columns used are the same ones (in the same
 // order) as returned by Columns.
-func (d *Database) Values(src interface{}, includePk bool) ([]interface{}, error) {
+func Values(src interface{}, includePk bool) ([]interface{}, error) {
 	columns, err := d.Columns(src, includePk)
 	if err != nil {
 		return nil, err
@@ -286,15 +243,10 @@ func (d *Database) Values(src interface{}, includePk bool) ([]interface{}, error
 	return d.SomeValues(src, columns)
 }
 
-// Values using the Default Database type
-func Values(src interface{}, includePk bool) ([]interface{}, error) {
-	return Default.Values(src, includePk)
-}
-
 // SomeValues returns a list of PreWrite processed values suitable for
 // use in an INSERT or UPDATE query. The columns used are the same ones (in
 // the same order) as specified in the columns argument.
-func (d *Database) SomeValues(src interface{}, columns []string) ([]interface{}, error) {
+func SomeValues(src interface{}, columns []string) ([]interface{}, error) {
 	data, err := getFields(reflect.TypeOf(src))
 	if err != nil {
 		return nil, err
@@ -324,14 +276,9 @@ func (d *Database) SomeValues(src interface{}, columns []string) ([]interface{},
 	return values, nil
 }
 
-// SomeValues using the Default Database type
-func SomeValues(src interface{}, columns []string) ([]interface{}, error) {
-	return Default.SomeValues(src, columns)
-}
-
 // Placeholders returns a list of placeholders suitable for an INSERT or UPDATE query.
 // If includePk is false, the primary key field is omitted.
-func (d *Database) Placeholders(src interface{}, includePk bool) ([]string, error) {
+func Placeholders(src interface{}, includePk bool) ([]string, error) {
 	data, err := getFields(reflect.TypeOf(src))
 	if err != nil {
 		return nil, err
@@ -349,16 +296,11 @@ func (d *Database) Placeholders(src interface{}, includePk bool) ([]string, erro
 	return placeholders, nil
 }
 
-// Placeholders using the Default Database type
-func Placeholders(src interface{}, includePk bool) ([]string, error) {
-	return Default.Placeholders(src, includePk)
-}
-
 // PlaceholdersString returns a list of placeholders suitable for an INSERT
 // or UPDATE query in string form, e.g.:
 //   ?,?,?,?
 // if includePk is false, the primary key field is omitted.
-func (d *Database) PlaceholdersString(src interface{}, includePk bool) (string, error) {
+func PlaceholdersString(src interface{}, includePk bool) (string, error) {
 	lst, err := d.Placeholders(src, includePk)
 	if err != nil {
 		return "", err
@@ -366,13 +308,8 @@ func (d *Database) PlaceholdersString(src interface{}, includePk bool) (string, 
 	return strings.Join(lst, ","), nil
 }
 
-// PlaceholdersString using the Default Database type
-func PlaceholdersString(src interface{}, includePk bool) (string, error) {
-	return Default.PlaceholdersString(src, includePk)
-}
-
 // scan a single row of data into a struct.
-func (d *Database) scanRow(data *structData, rows *sql.Rows, dst interface{}, columns []string) error {
+func scanRow(data *structData, rows *sql.Rows, dst interface{}, columns []string) error {
 	// check if there is data waiting
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
@@ -404,7 +341,7 @@ func (d *Database) scanRow(data *structData, rows *sql.Rows, dst interface{}, co
 // Scan function in the sql package, complete with meddling. After
 // the Scan is performed, the same values should be handed to
 // WriteTargets to finalize the values and record them in the struct.
-func (d *Database) Targets(dst interface{}, columns []string) ([]interface{}, error) {
+func Targets(dst interface{}, columns []string) ([]interface{}, error) {
 	data, err := getFields(reflect.TypeOf(dst))
 	if err != nil {
 		return nil, err
@@ -434,15 +371,10 @@ func (d *Database) Targets(dst interface{}, columns []string) ([]interface{}, er
 	return targets, nil
 }
 
-// Targets using the Default Database type
-func Targets(dst interface{}, columns []string) ([]interface{}, error) {
-	return Default.Targets(dst, columns)
-}
-
 // WriteTargets post-processes values with meddlers after a Scan from the
 // sql package has been performed. The list of targets is normally produced
 // by Targets.
-func (d *Database) WriteTargets(dst interface{}, columns []string, targets []interface{}) error {
+func WriteTargets(dst interface{}, columns []string, targets []interface{}) error {
 	if len(columns) != len(targets) {
 		return fmt.Errorf("meddler.WriteTargets: mismatch in number of columns (%d) and targets (%s)",
 			len(columns), len(targets))
@@ -472,15 +404,10 @@ func (d *Database) WriteTargets(dst interface{}, columns []string, targets []int
 	return nil
 }
 
-// WriteTargets using the Default Database type
-func WriteTargets(dst interface{}, columns []string, targets []interface{}) error {
-	return Default.WriteTargets(dst, columns, targets)
-}
-
 // Scan scans a single sql result row into a struct.
 // It leaves rows ready to be scanned again for the next row.
 // Returns sql.ErrNoRows if there is no data to read.
-func (d *Database) Scan(rows *sql.Rows, dst interface{}) error {
+func Scan(rows *sql.Rows, dst interface{}) error {
 	// get the list of struct fields
 	data, err := getFields(reflect.TypeOf(dst))
 	if err != nil {
@@ -496,15 +423,10 @@ func (d *Database) Scan(rows *sql.Rows, dst interface{}) error {
 	return d.scanRow(data, rows, dst, columns)
 }
 
-// Scan using the Default Database type
-func Scan(rows *sql.Rows, dst interface{}) error {
-	return Default.Scan(rows, dst)
-}
-
 // ScanRow scans a single sql result row into a struct.
 // It reads exactly one result row and closes rows when finished.
 // Returns sql.ErrNoRows if there is no result row.
-func (d *Database) ScanRow(rows *sql.Rows, dst interface{}) error {
+func ScanRow(rows *sql.Rows, dst interface{}) error {
 	// make sure we always close rows
 	defer rows.Close()
 
@@ -518,16 +440,11 @@ func (d *Database) ScanRow(rows *sql.Rows, dst interface{}) error {
 	return nil
 }
 
-// ScanRow using the Default Database type
-func ScanRow(rows *sql.Rows, dst interface{}) error {
-	return Default.ScanRow(rows, dst)
-}
-
 // ScanAll scans all sql result rows into a slice of structs.
 // It reads all rows and closes rows when finished.
 // dst should be a pointer to a slice of the appropriate type.
 // The new results will be appended to any existing data in dst.
-func (d *Database) ScanAll(rows *sql.Rows, dst interface{}) error {
+func ScanAll(rows *sql.Rows, dst interface{}) error {
 	// make sure we always close rows
 	defer rows.Close()
 
@@ -578,9 +495,4 @@ func (d *Database) ScanAll(rows *sql.Rows, dst interface{}) error {
 		// add to the result slice
 		sliceVal.Set(reflect.Append(sliceVal, eltVal))
 	}
-}
-
-// ScanAll using the Default Database type
-func ScanAll(rows *sql.Rows, dst interface{}) error {
-	return Default.ScanAll(rows, dst)
 }
