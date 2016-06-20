@@ -1,7 +1,6 @@
 package meddler
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -38,13 +37,13 @@ type DB interface {
 // Load loads a record using a query for the primary key field.
 // Returns sql.ErrNoRows if not found.
 func Load(db DB, table string, dst interface{}, pk int64) error {
-	columns, err := d.ColumnsQuoted(dst, true)
+	columns, err := ColumnsQuoted(dst, true)
 	if err != nil {
 		return err
 	}
 
 	// make sure we have a primary key field
-	pkName, _, err := d.PrimaryKey(dst)
+	pkName, _, err := PrimaryKey(dst)
 	if err != nil {
 		return err
 	}
@@ -53,15 +52,15 @@ func Load(db DB, table string, dst interface{}, pk int64) error {
 	}
 
 	// run the query
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = %s", columns, d.quoted(table), d.quoted(pkName), d.Placeholder)
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = %s", columns, quoted(table), quoted(pkName), Placeholder)
 
-	rows, err := runQuery(db, q, pk)
+	rows, err := db.Query(q, pk)
 	if err != nil {
 		return &dbErr{msg: "meddler.Load: DB error in Query", err: err}
 	}
 
 	// scan the row
-	return d.ScanRow(rows, dst)
+	return ScanRow(rows, dst)
 }
 
 // Insert performs an INSERT query for the given record.
@@ -69,7 +68,7 @@ func Load(db DB, table string, dst interface{}, pk int64) error {
 // will be set to the newly-allocated primary key value from the database
 // as returned by LastInsertId.
 func Insert(db DB, table string, src interface{}) error {
-	pkName, pkValue, err := d.PrimaryKey(src)
+	pkName, pkValue, err := PrimaryKey(src)
 	if err != nil {
 		return err
 	}
@@ -78,53 +77,35 @@ func Insert(db DB, table string, src interface{}) error {
 	}
 
 	// gather the query parts
-	namesPart, err := d.ColumnsQuoted(src, false)
+	namesPart, err := ColumnsQuoted(src, false)
 	if err != nil {
 		return err
 	}
-	valuesPart, err := d.PlaceholdersString(src, false)
+	valuesPart, err := PlaceholdersString(src, false)
 	if err != nil {
 		return err
 	}
-	values, err := d.Values(src, false)
+	values, err := Values(src, false)
 	if err != nil {
 		return err
 	}
 
 	// run the query
-	q := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", d.quoted(table), namesPart, valuesPart)
-	if d.UseReturningToGetID && pkName != "" {
-		q += " RETURNING " + d.quoted(pkName)
+	q := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", quoted(table), namesPart, valuesPart)
+	if pkName != "" {
+		q += " RETURNING " + quoted(pkName)
 		var newPk int64
 
-		row, err := runQueryRow(db, q, values...)
-		if err != nil {
-			return err
-		}
-		err = row.Scan(&newPk)
-		if err != nil {
+		row := db.QueryRow(q, values...)
+		if err := row.Scan(&newPk); err != nil {
 			return &dbErr{msg: "meddler.Insert: DB error in QueryRow", err: err}
 		}
-		if err = d.SetPrimaryKey(src, newPk); err != nil {
-			return fmt.Errorf("meddler.Insert: Error saving updated pk: %v", err)
-		}
-	} else if pkName != "" {
-		result, err := runExec(db, q, values...)
-		if err != nil {
-			return &dbErr{msg: "meddler.Insert: DB error in Exec", err: err}
-		}
-
-		// save the new primary key
-		newPk, err := result.LastInsertId()
-		if err != nil {
-			return &dbErr{msg: "meddler.Insert: DB error getting new primary key value", err: err}
-		}
-		if err = d.SetPrimaryKey(src, newPk); err != nil {
+		if err := SetPrimaryKey(src, newPk); err != nil {
 			return fmt.Errorf("meddler.Insert: Error saving updated pk: %v", err)
 		}
 	} else {
 		// no primary key, so no need to lookup new value
-		if _, err := runExec(db, q, values...); err != nil {
+		if _, err := db.Exec(q, values...); err != nil {
 			return &dbErr{msg: "meddler.Insert: DB error in Exec", err: err}
 		}
 	}
@@ -137,15 +118,15 @@ func Insert(db DB, table string, src interface{}) error {
 // and it will be used to select the database row that gets updated.
 func Update(db DB, table string, src interface{}) error {
 	// gather the query parts
-	names, err := d.Columns(src, false)
+	names, err := Columns(src, false)
 	if err != nil {
 		return err
 	}
-	placeholders, err := d.Placeholders(src, false)
+	placeholders, err := Placeholders(src, false)
 	if err != nil {
 		return err
 	}
-	values, err := d.Values(src, false)
+	values, err := Values(src, false)
 	if err != nil {
 		return err
 	}
@@ -153,11 +134,11 @@ func Update(db DB, table string, src interface{}) error {
 	// form the column=placeholder pairs
 	var pairs []string
 	for i := 0; i < len(names) && i < len(placeholders); i++ {
-		pair := fmt.Sprintf("%s=%s", d.quoted(names[i]), placeholders[i])
+		pair := fmt.Sprintf("%s=%s", quoted(names[i]), placeholders[i])
 		pairs = append(pairs, pair)
 	}
 
-	pkName, pkValue, err := d.PrimaryKey(src)
+	pkName, pkValue, err := PrimaryKey(src)
 	if err != nil {
 		return err
 	}
@@ -167,15 +148,15 @@ func Update(db DB, table string, src interface{}) error {
 	if pkValue < 1 {
 		return fmt.Errorf("meddler.Update: primary key must be an integer > 0")
 	}
-	ph := d.placeholder(len(placeholders) + 1)
+	ph := placeholder(len(placeholders) + 1)
 
 	// run the query
-	q := fmt.Sprintf("UPDATE %s SET %s WHERE %s=%s", d.quoted(table),
+	q := fmt.Sprintf("UPDATE %s SET %s WHERE %s=%s", quoted(table),
 		strings.Join(pairs, ","),
-		d.quoted(pkName), ph)
+		quoted(pkName), ph)
 	values = append(values, pkValue)
 
-	if _, err := runExec(db, q, values...); err != nil {
+	if _, err := db.Exec(q, values...); err != nil {
 		return &dbErr{msg: "meddler.Update: DB error in Exec", err: err}
 	}
 
@@ -185,14 +166,14 @@ func Update(db DB, table string, src interface{}) error {
 // Save performs an INSERT or an UPDATE, depending on whether or not
 // a primary keys exists and is non-zero.
 func Save(db DB, table string, src interface{}) error {
-	pkName, pkValue, err := d.PrimaryKey(src)
+	pkName, pkValue, err := PrimaryKey(src)
 	if err != nil {
 		return err
 	}
 	if pkName != "" && pkValue != 0 {
-		return d.Update(db, table, src)
+		return Update(db, table, src)
 	} else {
-		return d.Insert(db, table, src)
+		return Insert(db, table, src)
 	}
 }
 
@@ -201,63 +182,24 @@ func Save(db DB, table string, src interface{}) error {
 // result row.
 func QueryRow(db DB, dst interface{}, query string, args ...interface{}) error {
 	// perform the query
-	rows, err := runQuery(db, query, args...)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return err
 	}
 
 	// gather the result
-	return d.ScanRow(rows, dst)
+	return ScanRow(rows, dst)
 }
 
 // QueryAll performs the given query with the given arguments, scanning
 // all results rows into dst.
 func QueryAll(db DB, dst interface{}, query string, args ...interface{}) error {
 	// perform the query
-	rows, err := runQuery(db, query, args...)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return err
 	}
 
 	// gather the results
-	return d.ScanAll(rows, dst)
-}
-
-func runQuery(db DB, q string, args ...interface{}) (*sql.Rows, error) {
-	if StmtCacheFunc != nil {
-		stmt, err := StmtCacheFunc(db, q)
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			return stmt.Query(args...)
-		}
-	}
-	return db.Query(q, args...)
-}
-
-func runQueryRow(db DB, q string, args ...interface{}) (*sql.Row, error) {
-	if StmtCacheFunc != nil {
-		stmt, err := StmtCacheFunc(db, q)
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			return stmt.QueryRow(args...), nil
-		}
-	}
-	return db.QueryRow(q, args...), nil
-}
-
-func runExec(db DB, q string, args ...interface{}) (sql.Result, error) {
-	if StmtCacheFunc != nil {
-		stmt, err := StmtCacheFunc(db, q)
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			return stmt.Exec(args...)
-		}
-	}
-	return db.Exec(q, args...)
+	return ScanAll(rows, dst)
 }

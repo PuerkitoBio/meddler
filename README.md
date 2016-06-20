@@ -1,9 +1,9 @@
 Meddler [![Build Status](https://travis-ci.org/russross/meddler.svg?branch=master)](https://travis-ci.org/russross/meddler)
 =======
 
-This `pgxnative` branch implements the meddler API for use with the `pgx`
+**This `pgxnative` branch implements the meddler API for use with the `pgx`
 package, a native postgres driver that is faster than other `database/sql`-
-based ones such as `pq`.
+based ones such as `pq`.**
 
 Meddler is a small toolkit to take some of the tedium out of moving data
 back and forth between sql queries and structs.
@@ -327,7 +327,7 @@ license prevents you from using Meddler in your project, please
 contact me and I will consider adding an additional license that is
 better suited to your needs.
 
-> Copyright © 2013 Russ Ross.
+> Copyright © 2013 Russ Ross, 2016 Martin Angers (adapted for pgx).
 > All rights reserved.
 > 
 > Redistribution and use in source and binary forms, with or without

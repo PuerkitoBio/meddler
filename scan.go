@@ -1,40 +1,30 @@
 package meddler
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jackc/pgx"
 )
 
 // the name of our struct tag
 const tagName = "meddler"
 
 const (
-	Quote               = `"`
-	Placeholder         = "$1"
-	UseReturningToGetID = true
+	Quote       = `"`
+	Placeholder = "$1"
 )
 
-// StmtCacheFunc is a function that takes a DB interface and a query string
-// and returns a prepared statement or an error. If the returned statement
-// is not nil and there is no error, the statement is used to execute
-// the query. The statement must be valid to be executed on the provided DB.
-// If an error is returned, it is also returned by the calling function
-// (e.g. Load or Insert) and the query is not executed.
-//
-// The default nil value means that no prepared statement is used.
-var StmtCacheFunc func(DB, string) (*sql.Stmt, error)
-
 func quoted(s string) string {
-	return d.Quote + s + d.Quote
+	return Quote + s + Quote
 }
 
 func placeholder(n int) string {
-	return strings.Replace(d.Placeholder, "1", strconv.FormatInt(int64(n), 10), 1)
+	return strings.Replace(Placeholder, "1", strconv.FormatInt(int64(n), 10), 1)
 }
 
 // Debug enables debug mode, where unused columns and struct fields will be logged
@@ -175,7 +165,7 @@ func ColumnsQuoted(src interface{}, includePk bool) (string, error) {
 
 	var parts []string
 	for _, elt := range unquoted {
-		parts = append(parts, d.quoted(elt))
+		parts = append(parts, quoted(elt))
 	}
 
 	return strings.Join(parts, ","), nil
@@ -236,11 +226,11 @@ func SetPrimaryKey(src interface{}, pk int64) error {
 // key field is omitted. The columns used are the same ones (in the same
 // order) as returned by Columns.
 func Values(src interface{}, includePk bool) ([]interface{}, error) {
-	columns, err := d.Columns(src, includePk)
+	columns, err := Columns(src, includePk)
 	if err != nil {
 		return nil, err
 	}
-	return d.SomeValues(src, columns)
+	return SomeValues(src, columns)
 }
 
 // SomeValues returns a list of PreWrite processed values suitable for
@@ -289,7 +279,7 @@ func Placeholders(src interface{}, includePk bool) ([]string, error) {
 		if !includePk && name == data.pk {
 			continue
 		}
-		ph := d.placeholder(len(placeholders) + 1)
+		ph := placeholder(len(placeholders) + 1)
 		placeholders = append(placeholders, ph)
 	}
 
@@ -301,7 +291,7 @@ func Placeholders(src interface{}, includePk bool) ([]string, error) {
 //   ?,?,?,?
 // if includePk is false, the primary key field is omitted.
 func PlaceholdersString(src interface{}, includePk bool) (string, error) {
-	lst, err := d.Placeholders(src, includePk)
+	lst, err := Placeholders(src, includePk)
 	if err != nil {
 		return "", err
 	}
@@ -309,17 +299,17 @@ func PlaceholdersString(src interface{}, includePk bool) (string, error) {
 }
 
 // scan a single row of data into a struct.
-func scanRow(data *structData, rows *sql.Rows, dst interface{}, columns []string) error {
+func scanRow(data *structData, rows *pgx.Rows, dst interface{}, columns []string) error {
 	// check if there is data waiting
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		return sql.ErrNoRows
+		return pgx.ErrNoRows
 	}
 
 	// get a list of targets
-	targets, err := d.Targets(dst, columns)
+	targets, err := Targets(dst, columns)
 	if err != nil {
 		return err
 	}
@@ -330,7 +320,7 @@ func scanRow(data *structData, rows *sql.Rows, dst interface{}, columns []string
 	}
 
 	// post-process and copy the target values into the struct
-	if err := d.WriteTargets(dst, columns, targets); err != nil {
+	if err := WriteTargets(dst, columns, targets); err != nil {
 		return err
 	}
 
@@ -376,7 +366,7 @@ func Targets(dst interface{}, columns []string) ([]interface{}, error) {
 // by Targets.
 func WriteTargets(dst interface{}, columns []string, targets []interface{}) error {
 	if len(columns) != len(targets) {
-		return fmt.Errorf("meddler.WriteTargets: mismatch in number of columns (%d) and targets (%s)",
+		return fmt.Errorf("meddler.WriteTargets: mismatch in number of columns (%d) and targets (%d)",
 			len(columns), len(targets))
 	}
 
@@ -406,8 +396,8 @@ func WriteTargets(dst interface{}, columns []string, targets []interface{}) erro
 
 // Scan scans a single sql result row into a struct.
 // It leaves rows ready to be scanned again for the next row.
-// Returns sql.ErrNoRows if there is no data to read.
-func Scan(rows *sql.Rows, dst interface{}) error {
+// Returns pgx.ErrNoRows if there is no data to read.
+func Scan(rows *pgx.Rows, dst interface{}) error {
 	// get the list of struct fields
 	data, err := getFields(reflect.TypeOf(dst))
 	if err != nil {
@@ -415,36 +405,29 @@ func Scan(rows *sql.Rows, dst interface{}) error {
 	}
 
 	// get the sql columns
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
+	fds := rows.FieldDescriptions()
+	cols := make([]string, len(fds))
+	for i, fd := range fds {
+		cols[i] = fd.Name
 	}
 
-	return d.scanRow(data, rows, dst, columns)
+	return scanRow(data, rows, dst, cols)
 }
 
 // ScanRow scans a single sql result row into a struct.
 // It reads exactly one result row and closes rows when finished.
-// Returns sql.ErrNoRows if there is no result row.
-func ScanRow(rows *sql.Rows, dst interface{}) error {
+// Returns pgx.ErrNoRows if there is no result row.
+func ScanRow(rows *pgx.Rows, dst interface{}) error {
 	// make sure we always close rows
 	defer rows.Close()
-
-	if err := d.Scan(rows, dst); err != nil {
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	return Scan(rows, dst)
 }
 
 // ScanAll scans all sql result rows into a slice of structs.
 // It reads all rows and closes rows when finished.
 // dst should be a pointer to a slice of the appropriate type.
 // The new results will be appended to any existing data in dst.
-func ScanAll(rows *sql.Rows, dst interface{}) error {
+func ScanAll(rows *pgx.Rows, dst interface{}) error {
 	// make sure we always close rows
 	defer rows.Close()
 
@@ -473,9 +456,10 @@ func ScanAll(rows *sql.Rows, dst interface{}) error {
 	}
 
 	// get the sql columns
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
+	fds := rows.FieldDescriptions()
+	cols := make([]string, len(fds))
+	for i, fd := range fds {
+		cols[i] = fd.Name
 	}
 
 	// gather the results
@@ -485,8 +469,8 @@ func ScanAll(rows *sql.Rows, dst interface{}) error {
 		elt := eltVal.Interface()
 
 		// scan it
-		if err := d.scanRow(data, rows, elt, columns); err != nil {
-			if err == sql.ErrNoRows {
+		if err := scanRow(data, rows, elt, cols); err != nil {
+			if err == pgx.ErrNoRows {
 				return nil
 			}
 			return err
